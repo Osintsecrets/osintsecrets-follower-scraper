@@ -1,0 +1,32 @@
+name: Update Instagram follower count
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check requests
+      - run: python scrape_followers.py
+      - name: Commit verified count
+        run: |
+          if git diff --quiet -- data/followers.json; then
+            echo "Follower count unchanged."
+            exit 0
+          fi
+          git config user.name "OSINTsecrets counter"
+          git config user.email "actions@github.com"
+          git add data/followers.json
+          git commit -m "Update follower count"
+          git push
