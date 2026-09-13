@@ -8,57 +8,41 @@ import requests
 
 USERNAME = "osintsecrets"
 OUT = Path("data/followers.json")
+SOURCE_URL = f"https://instastatistics.com/{USERNAME}"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Mozilla/5.0 (compatible; HomeIntelDisplay/1.0; +https://github.com/Osintsecrets/osintsecrets-follower-scraper)",
+    "Accept": "text/html,application/xhtml+xml",
     "Accept-Language": "en-US,en;q=0.9",
-    "Origin": "https://www.instagram.com",
-    "Referer": f"https://www.instagram.com/{USERNAME}/",
-    "X-IG-App-ID": "936619743392459",
 }
 
-def get_count(session: requests.Session) -> int:
-    endpoints = [
-        f"https://i.instagram.com/api/v1/users/web_profile_info/?username={USERNAME}",
-        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={USERNAME}",
-    ]
-    for url in endpoints:
-        response = session.get(url, headers=HEADERS, timeout=20)
-        if not response.ok:
-            continue
-        try:
-            user = response.json()["data"]["user"]
-            count = user.get("follower_count")
-            if isinstance(count, int) and count >= 0:
-                return count
-        except (ValueError, KeyError, TypeError):
-            pass
-
-    response = session.get(
-        f"https://www.instagram.com/{USERNAME}/",
-        headers={**HEADERS, "Accept": "text/html,application/xhtml+xml"},
-        timeout=20,
-    )
-    response.raise_for_status()
+def extract_count(html: str) -> int:
     patterns = [
-        r'"follower_count":(\d+)',
-        r'"edge_followed_by":\{"count":(\d+)\}',
-        r'"followed_by_viewer":false.*?"follower_count":(\d+)',
+        rf"@{USERNAME}\) is an Instagram account with\s*([\d,]+)\s*followers",
+        rf"@{USERNAME}\) currently has\s*([\d,]+)\s*Instagram followers",
+        r'"followerCount"\s*:\s*(\d+)',
+        r'"followers"\s*:\s*(\d+)',
     ]
     for pattern in patterns:
-        match = re.search(pattern, response.text)
+        match = re.search(pattern, html, re.IGNORECASE)
         if match:
-            return int(match.group(1))
-    raise RuntimeError("Instagram returned no follower count")
+            count = int(match.group(1).replace(",", ""))
+            if count > 0:
+                return count
+    raise RuntimeError("Instastatistics returned no valid follower count")
+
+def get_count(session: requests.Session) -> int:
+    response = session.get(SOURCE_URL, headers=HEADERS, timeout=25)
+    response.raise_for_status()
+    return extract_count(response.text)
 
 def main() -> None:
-    session = requests.Session()
-    followers = get_count(session)
+    followers = get_count(requests.Session())
     payload = {
         "username": USERNAME,
         "followers": followers,
         "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "source": "instagram-public-profile",
+        "source": "instastatistics-public-counter",
+        "sourceUrl": SOURCE_URL,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")
@@ -68,5 +52,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"Scrape failed: {exc}", file=sys.stderr)
+        print(f"Counter refresh failed: {exc}", file=sys.stderr)
         raise
