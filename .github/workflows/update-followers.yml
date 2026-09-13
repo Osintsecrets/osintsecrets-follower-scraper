@@ -2,6 +2,11 @@ name: Update Instagram follower count
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scrape_followers.py"
+      - ".github/workflows/update-followers.yml"
   schedule:
     - cron: "*/5 * * * *"
 
